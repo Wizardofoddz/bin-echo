@@ -69,7 +69,7 @@ release:
   name_template: "{{ .ProjectName }}-v{{ .Version }}"
   github:
     owner: computes
-    name: help
+    name: bin-echo
 dockers:
   - 
     dockerfile: Dockerfile.goreleaser
