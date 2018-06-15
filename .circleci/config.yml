@@ -1,0 +1,108 @@
+# Golang CircleCI 2.0 configuration file
+#
+# Check https://circleci.com/docs/2.0/language-go/ for more details
+---
+docker-go-image: &docker-go-image
+  docker:
+    - image: circleci/golang:1.10
+  working_directory: /go/src/github.com/computes/bin-echo
+
+default-filters: &default-filters
+  filters:
+    tags:
+      only:
+        - /.*/
+
+publish-filters: &publish-filters
+  filters:
+    tags:
+      only:
+        - /^v.*/
+    branches:
+      ignore: /.*/
+
+# END merge keys
+
+version: 2
+jobs:
+
+  checkout_code:
+    <<: *docker-go-image
+    steps:
+      - checkout
+      - run: >
+          cat > ~/.netrc << EOF
+            machine github.com
+              login $GITHUB_USERNAME
+              password $GITHUB_TOKEN
+          EOF
+      - run: go get -u github.com/golang/dep/cmd/dep
+      - run: dep ensure -v
+      - persist_to_workspace:
+          root: /go/src/github.com/computes
+          paths:
+            - bin-echo
+
+  test:
+    <<: *docker-go-image
+    steps:
+      - attach_workspace:
+          at: /go/src/github.com/computes
+      - run: go test
+
+  build:
+    <<: *docker-go-image
+    steps:
+    - attach_workspace:
+        at: /go/src/github.com/computes
+    - run: go build
+
+  publish:
+    <<: *docker-go-image
+    steps:
+      - attach_workspace:
+          at: /go/src/github.com/computes
+      - setup_remote_docker
+      - run: mkdir -p ~/.docker; echo '{"experimental":"enabled"}' > ~/.docker/config.json
+      - run: docker login --username="$DOCKER_USER" --password="$DOCKER_PASS"
+      - run: curl -sL https://git.io/goreleaser | bash
+      
+      - run: docker manifest create computes/bin-echo:$CIRCLE_TAG computes/bin-echo-amd64:$CIRCLE_TAG computes/bin-echo-386:$CIRCLE_TAG computes/bin-echo-armv6:$CIRCLE_TAG computes/bin-echo-armv7:$CIRCLE_TAG computes/bin-echo-arm64:$CIRCLE_TAG computes/bin-echo-ppc64le:$CIRCLE_TAG computes/bin-echo-s390x:$CIRCLE_TAG computes/bin-echo-freebsd:$CIRCLE_TAG
+      - run: docker manifest annotate computes/bin-echo:$CIRCLE_TAG computes/bin-echo-386:$CIRCLE_TAG --os linux --arch 386
+      - run: docker manifest annotate computes/bin-echo:$CIRCLE_TAG computes/bin-echo-armv6:$CIRCLE_TAG --os linux --arch arm --variant v6
+      - run: docker manifest annotate computes/bin-echo:$CIRCLE_TAG computes/bin-echo-armv7:$CIRCLE_TAG --os linux --arch arm --variant v7
+      - run: docker manifest annotate computes/bin-echo:$CIRCLE_TAG computes/bin-echo-arm64:$CIRCLE_TAG --os linux --arch arm64 --variant v8
+      - run: docker manifest annotate computes/bin-echo:$CIRCLE_TAG computes/bin-echo-ppc64le:$CIRCLE_TAG --os linux --arch ppc64le
+      - run: docker manifest annotate computes/bin-echo:$CIRCLE_TAG computes/bin-echo-s390x:$CIRCLE_TAG --os linux --arch s390x
+      - run: docker manifest annotate computes/bin-echo:$CIRCLE_TAG computes/bin-echo-freebsd:$CIRCLE_TAG --os freebsd --arch amd64
+     
+      - run: docker manifest create computes/bin-echo:latest computes/bin-echo-amd64:latest computes/bin-echo-386:latest computes/bin-echo-armv6:latest computes/bin-echo-armv7:latest computes/bin-echo-arm64:latest computes/bin-echo-ppc64le:latest computes/bin-echo-s390x:latest computes/bin-echo-freebsd:latest
+      - run: docker manifest annotate computes/bin-echo:latest computes/bin-echo-386:latest --os linux --arch 386
+      - run: docker manifest annotate computes/bin-echo:latest computes/bin-echo-armv6:latest --os linux --arch arm --variant v6
+      - run: docker manifest annotate computes/bin-echo:latest computes/bin-echo-armv7:latest --os linux --arch arm --variant v7
+      - run: docker manifest annotate computes/bin-echo:latest computes/bin-echo-arm64:latest --os linux --arch arm64 --variant v8
+      - run: docker manifest annotate computes/bin-echo:latest computes/bin-echo-ppc64le:latest --os linux --arch ppc64le
+      - run: docker manifest annotate computes/bin-echo:latest computes/bin-echo-s390x:latest --os linux --arch s390x
+      - run: docker manifest annotate computes/bin-echo:latest computes/bin-echo-freebsd:latest --os freebsd --arch amd64
+     
+      - run: docker manifest push computes/bin-echo:$CIRCLE_TAG
+      - run: docker manifest push computes/bin-echo:latest
+
+workflows:
+  version: 2
+  build-and-publish:
+    jobs:
+      - checkout_code:
+          <<: *default-filters
+      - test:
+          <<: *default-filters
+          requires:
+            - checkout_code
+      - build:
+          <<: *default-filters
+          requires:
+            - checkout_code
+      - publish:
+          <<: *publish-filters
+          requires:
+            - build
